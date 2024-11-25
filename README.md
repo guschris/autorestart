@@ -3,7 +3,7 @@
 A simple Linux command line tool that:
 * starts a child process, redirecting `stdout` and `stderr`
 * checks it's responding by calling a HTTP health endpoint every 5 seconds
-* restarts the child if it exits, or the heath check fails
+* restarts the child if it exits, or the health check fails
 
 ## Building
 
