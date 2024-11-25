@@ -21,8 +21,8 @@ Usage: ./health_monitor [--health <url>] [--retry <count>] -- <child_process> [a
 ```
 
 Where:
-* `--health` is the HTTP endpoint to check
-* `--retry` is the maximum numer of times to retry the fail process
+* `--health` is the HTTP endpoint to check, defaults to `http://localhost/up`
+* `--retry` is the maximum numer of times to retry the fail process, defaults to `3`
 * all arguments after `--` is the command to run
 
 If the process fails more than the maximum number of allowed retries than and exit code of `1` is returned.
