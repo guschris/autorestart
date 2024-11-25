@@ -1,23 +1,31 @@
-# health_monitor
+# monitor and monitor_ssh
 
-A simple Linux command line tool that:
+`monitor` is a simple Linux command line tool that:
 * starts a child process, redirecting `stdout` and `stderr`
-* checks it's responding by calling a HTTP health endpoint every 5 seconds
+* checks it's responding by calling a HTTP health endpoint every 5 seconds and writing the results to `stderr`
 * restarts the child if it exits, or the health check fails
+
+`monitor_ssh` is a tool to run `monitor cmd <arg>` remotely:
+* starts `monitor ...` on a remote server via SSH, redirecting `stdout` and `stderr`
+* checks the remote `monitor`is writing to `stderr` every 5 seconds
+* restarts the SSH session if it exits, or `monitor` stops writing to `stderr`
 
 ## Building
 
-All the source code is in `health_monitor.c`.
-
 1. Install `libcurl-dev`, e.g. `sudo apt install libcurl3-gnutls-dev` on Debian
+1. Install `libssh-dev`, e.g. `sudo apt install libssh-dev` on Debian
 2. run `./build`
 
-A 17K executable will be built in the current directory, called `health_monitor`.
+The script will build two executables in the current directory:
+* A 17K executable called `monitor`.
+* A 18K executable called `monitor_ssh`.
 
 ## Usage
 
+### monitor usage
+
 ```
-Usage: ./health_monitor [--health <url>] [--retry <count>] -- <child_process> [args...]
+Usage: ./monitor [--health <url>] [--retry <count>] -- <child_process> [args...]
 ```
 
 Where:
