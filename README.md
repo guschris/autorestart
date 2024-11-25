@@ -7,8 +7,12 @@ A simple Linux command line tool that:
 
 ## Building
 
+All the source code is in `health_monitor.c`.
+
 1. Install `libcurl-dev`, e.g. `sudo apt install libcurl3-gnutls-dev` on Debian
 2. run `./build`
+
+A 17K executable will be built in the current directory, called `health_monitor`.
 
 ## Usage
 
