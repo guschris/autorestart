@@ -1,4 +1,4 @@
-# health_montor
+# health_monitor
 
 A simple Linux command line tool that:
 * starts a child process, redirecting `stdout` and `stderr`
