@@ -8,12 +8,9 @@
 ## Building
 
 1. Install `libcurl-dev`, e.g. `sudo apt install libcurl3-gnutls-dev` on Debian
-1. Install `libssh-dev`, e.g. `sudo apt install libssh-dev` on Debian
 2. run `./build`
 
-The script will build two executables in the current directory:
-* A 17K executable called `autorestart`.
-* A 18K executable called `monitor_ssh`.
+The script will build a 17K executable called `autorestart`.
 
 ## Usage
 
@@ -27,11 +24,4 @@ Where:
 * all arguments after `--` is the command to run
 
 If the process fails more than the maximum number of allowed retries than and exit code of `1` is returned.
-
-# monitor_ssh
-
-`monitor_ssh` is a tool to run `autorestart cmd <arg>` remotely:
-* starts `autorestart ...` on a remote server via SSH, redirecting `stdout` and `stderr`
-* checks the remote `autorestart`is writing to `stderr` every 5 seconds
-* restarts the SSH session if it exits, or `autorestart` stops writing to `stderr`
 
