@@ -1,14 +1,9 @@
-# monitor and monitor_ssh
+# autorestart
 
-`monitor` is a simple Linux command line tool that:
+`autorestart` is a simple Linux command line tool that:
 * starts a child process, redirecting `stdout` and `stderr`
-* checks it's responding by calling a HTTP health endpoint every 5 seconds and writing the results to `stderr`
-* restarts the child if it exits, or the health check fails
-
-`monitor_ssh` is a tool to run `monitor cmd <arg>` remotely:
-* starts `monitor ...` on a remote server via SSH, redirecting `stdout` and `stderr`
-* checks the remote `monitor`is writing to `stderr` every 5 seconds
-* restarts the SSH session if it exits, or `monitor` stops writing to `stderr`
+* restarts the child if it exits with non-zero exit code
+* optional checks the child is responding by calling a HTTP health endpoint every 5 seconds and writing the results to `stderr`.  If the healthcheck fails then the child process is killed and restarted.
 
 ## Building
 
@@ -17,15 +12,13 @@
 2. run `./build`
 
 The script will build two executables in the current directory:
-* A 17K executable called `monitor`.
+* A 17K executable called `autorestart`.
 * A 18K executable called `monitor_ssh`.
 
 ## Usage
 
-### monitor usage
-
 ```
-Usage: ./monitor [--health <url>] [--retry <count>] -- <child_process> [args...]
+Usage: ./autorestart [--health <url>] [--retry <count>] -- <child_process> [args...]
 ```
 
 Where:
@@ -34,3 +27,11 @@ Where:
 * all arguments after `--` is the command to run
 
 If the process fails more than the maximum number of allowed retries than and exit code of `1` is returned.
+
+# monitor_ssh
+
+`monitor_ssh` is a tool to run `autorestart cmd <arg>` remotely:
+* starts `autorestart ...` on a remote server via SSH, redirecting `stdout` and `stderr`
+* checks the remote `autorestart`is writing to `stderr` every 5 seconds
+* restarts the SSH session if it exits, or `autorestart` stops writing to `stderr`
+
