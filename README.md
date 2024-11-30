@@ -28,8 +28,8 @@ autorestart [--health <url>] [--retry <count>] [--timeout <duration>] -- <comman
 ### Arguments
 | Argument	| Description |
 |-----------|-------------|
-| --health <url>	| Optional. A URL to an HTTP health check endpoint. The program will periodically send HEAD requests to this URL while the child process is running. If the health check fails, the child process is restarted. Example: --health http://localhost/up. |
-| --retry <count>	| Optional. The maximum number of times the child process will be restarted if it fails (exits with a non-zero code), exceeds the timeout, or fails the health check. Defaults to 3. Example: --retry 5. |
+| --health <url>	| Optional. A URL to an HTTP health check endpoint. The program will periodically send HEAD requests to this URL while the child process is running. If the health check fails, the child process is restarted. Example: `--health http://localhost/up`. |
+| --retry <count>	| Optional. The maximum number of times the child process will be restarted if it fails (exits with a non-zero code), exceeds the timeout, or fails the health check. Defaults to 3. Example: `--retry 5`. |
 |--timeout <duration>	| Optional. The maximum runtime for the child process. If the child process runs longer than the specified duration, it is terminated and restarted. Durations can be specified in: <br> - Seconds: `20s`<br> - Minutes: `10min`<br> - Hours: `5h`<br>If no unit is provided, seconds are assumed. Example: `--timeout 1h`. |
 | --	| Required. Indicates the end of autorestart options and the start of the command to run as the child process. |
 | command	| The command and its arguments that autorestart will execute and monitor. |
