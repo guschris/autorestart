@@ -2,122 +2,170 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
 #include <curl/curl.h>
+#include <errno.h>
+#include <time.h>
 
-#define DEFAULT_RETRY_COUNT 3
-#define HEALTH_CHECK_INTERVAL 5
+#define DEFAULT_RETRIES 3
+#define DEFAULT_HEALTH_URL "http://localhost/up"
 
-// Perform the health check using libcurl
-int perform_health_check(const char *url) {
-    CURL *curl;
-    CURLcode res;
-    long response_code = 0;
+typedef struct {
+    char *health_url;
+    int retries;
+    int timeout;
+    char **child_args;
+} Config;
 
-    curl = curl_easy_init();
-    if (!curl) {
-        fprintf(stderr, "Failed to initialize CURL.\n");
-        return 0;
+void print_usage(void) {
+    fprintf(stderr, "Usage: autorestart [--health <url>] [--retry <count>] [--timeout <duration>] -- <command> [args...]\n");
+    fprintf(stderr, "Duration format: <number>[s|min|h] (e.g., 20s, 10min, 5h). Default unit is seconds.\n");
+    exit(1);
+}
+
+int parse_duration(const char *duration_str) {
+    int len = strlen(duration_str);
+    if (len == 0) return -1;
+
+    char unit = duration_str[len - 1];
+    int multiplier = 1;  // Default to seconds
+
+    if (unit == 's') {
+        multiplier = 1;  // Seconds
+        len--;           // Exclude the 's'
+    } else if (len > 3 && strncmp(&duration_str[len - 3], "min", 3) == 0) {
+        multiplier = 60;  // Minutes
+        len -= 3;         // Exclude "min"
+    } else if (unit == 'h') {
+        multiplier = 3600;  // Hours
+        len--;              // Exclude the 'h'
     }
+
+    char number_part[len + 1];
+    strncpy(number_part, duration_str, len);
+    number_part[len] = '\0';
+
+    int value = atoi(number_part);
+    return value > 0 ? value * multiplier : -1;
+}
+
+void parse_arguments(int argc, char *argv[], Config *config) {
+    config->health_url = NULL;
+    config->retries = DEFAULT_RETRIES;
+    config->timeout = -1;  // Disabled by default
+    config->child_args = NULL;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--health") == 0) {
+            if (++i >= argc) print_usage();
+            config->health_url = argv[i];
+        } else if (strcmp(argv[i], "--retry") == 0) {
+            if (++i >= argc) print_usage();
+            config->retries = atoi(argv[i]);
+        } else if (strcmp(argv[i], "--timeout") == 0) {
+            if (++i >= argc) print_usage();
+            config->timeout = parse_duration(argv[i]);
+            if (config->timeout < 0) {
+                fprintf(stderr, "Invalid timeout format: %s\n", argv[i]);
+                print_usage();
+            }
+        } else if (strcmp(argv[i], "--") == 0) {
+            config->child_args = &argv[i + 1];
+            break;
+        } else {
+            print_usage();
+        }
+    }
+
+    if (config->child_args == NULL) {
+        print_usage();
+    }
+}
+
+int health_check(const char *url) {
+    if (!url) return 1;  // Skip health check if no URL is provided
+    CURL *curl = curl_easy_init();
+    if (!curl) return 0;
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L); // Only check the response header
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L); // Timeout for health check
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);  // 5-second timeout
 
-    res = curl_easy_perform(curl);
-    if (res == CURLE_OK) {
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-    }
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
     curl_easy_cleanup(curl);
 
-    return (res == CURLE_OK && response_code >= 200 && response_code < 300);
+    return (res == CURLE_OK && http_code == 200);
 }
 
-// Print usage instructions
-void print_usage(const char *prog_name) {
-    printf("Usage: %s [--health <url>] [--retry <count>] -- <child_process> [args...]\n", prog_name);
+void terminate_process(pid_t pid) {
+    kill(pid, SIGTERM);
+    sleep(1);  // Give the process a moment to terminate gracefully
+    kill(pid, SIGKILL);  // Force terminate if it's still running
+}
+
+int monitor_child_process(pid_t pid, int timeout, const char *health_url) {
+    time_t start_time = time(NULL);
+
+    while (1) {
+        int status;
+        pid_t result = waitpid(pid, &status, WNOHANG);
+        if (result == pid) {
+            // Process exited
+            return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        }
+
+        // Check timeout
+        if (timeout > 0 && difftime(time(NULL), start_time) > timeout) {
+            fprintf(stderr, "Child process exceeded timeout of %d seconds.\n", timeout);
+            return -1;  // Indicate timeout
+        }
+
+        // Perform health check
+        if (health_url && !health_check(health_url)) {
+            fprintf(stderr, "Health check failed for URL: %s\n", health_url);
+            return -1;  // Indicate health check failure
+        }
+
+        sleep(1);  // Check every second
+    }
 }
 
 int main(int argc, char *argv[]) {
-    const char *health_endpoint = NULL; // NULL means no health check
-    int max_retries = DEFAULT_RETRY_COUNT;
-    int child_arg_start = 0;
-    const char *program_name = argv[0];
+    Config config;
+    parse_arguments(argc, argv, &config);
 
-    // Parse command-line arguments
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--health") == 0 && i + 1 < argc) {
-            health_endpoint = argv[++i];
-        } else if (strcmp(argv[i], "--retry") == 0 && i + 1 < argc) {
-            max_retries = atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--") == 0) {
-            child_arg_start = i + 1;
-            break;
-        }
-    }
+    int retries_left = config.retries;
 
-    if (child_arg_start == 0 || child_arg_start >= argc) {
-        print_usage(program_name);
-        return 1;
-    }
+    while (retries_left > 0) {
+        fprintf(stderr, "Starting child process...\n");
+        pid_t pid = fork();
 
-    int retries = 0;
-    pid_t pid;
-    int status;
-
-    while (retries <= max_retries) {
-        if (retries > 0) {
-            fprintf(stderr, "%s: restarting in %d s...\n", program_name, retries);
-            sleep(retries);
-        }
-
-        pid = fork();        
-        if (pid == 0) { // Child process
-            execvp(argv[child_arg_start], &argv[child_arg_start]);
+        if (pid == 0) {
+            // Child process
+            execvp(config.child_args[0], config.child_args);
             perror("execvp failed");
             exit(1);
-        } else if (pid < 0) { // Fork failed
-            perror("fork failed");
-            return 1;
         }
 
-        // Parent process
+        // Parent process: monitor the child process
+        int result = monitor_child_process(pid, config.timeout, config.health_url);
 
-        // if health check is enabled, perform health check in a loop
-        while (health_endpoint) {
-            sleep(HEALTH_CHECK_INTERVAL);
-
-            // Perform health check
-            if (perform_health_check(health_endpoint)) {
-                fprintf(stderr, "%s: Health check good.\n", program_name);
-                continue;
-            } else {
-                fprintf(stderr, "%s: Health check FAILED.\n", program_name);
-                kill(pid, SIGKILL);
-                break;
-            }
+        // If child exited successfully, stop retrying
+        if (result == 0) {
+            fprintf(stderr, "Child process exited successfully.\n");
+            return 0;
         }
 
-        // Wait until the child process has terminated
-        if (waitpid(pid, &status, 0) >= 0) {
-            if (WIFEXITED(status)) {
-                int exit_code = WEXITSTATUS(status);
-                fprintf(stderr, "%s: Child process exited with code %d\n", program_name, exit_code);
-
-                // Restart only if the child exited with a non-zero code
-                if (exit_code == 0) {
-                    return 0;
-                }
-            } else if (WIFSIGNALED(status)) {
-                fprintf(stderr, "%s: Child process terminated by signal %d\n", program_name, WTERMSIG(status));
-            }
-        }
-
-        retries++;
+        // Restart the process if necessary
+        terminate_process(pid);
+        fprintf(stderr, "Restarting child process (retries left: %d)...\n", --retries_left);
     }
 
-    fprintf(stderr, "%s: Exceeded maximum retries (%d).\n", program_name, max_retries);
+    fprintf(stderr, "Child process exceeded retry limit (%d retries). Exiting...\n", config.retries);
     return 1;
 }
