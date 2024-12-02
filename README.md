@@ -7,8 +7,10 @@
 - Automatically restart a child process if it exits with a non-zero error code.
 - Optionally perform periodic health checks against a configurable HTTP endpoint.
 - Restart the child process if it exceeds a specified timeout.
+- Restart the child process if it get into the "uninterrupible" process state (D).
 - Configurable retry limits to control how many times the process can be restarted.
 - Outputs the child process's `stdout` and `stderr` to the parent process.
+- 
 
 ## Building
 
