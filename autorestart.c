@@ -103,10 +103,20 @@ int health_check(const char *url) {
 }
 
 void terminate_process(pid_t pid) {
+    // First, attempt a graceful termination
     kill(pid, SIGTERM);
-    sleep(1);  // Give the process a moment to terminate gracefully
-    kill(pid, SIGKILL);  // Force terminate if it's still running
+    sleep(1);  // Allow the process to terminate
+
+    // Force kill if still running
+    if (kill(pid, 0) == 0) {
+        kill(pid, SIGKILL);
+    }
+
+    // Reap the child process to avoid zombie state
+    int status;
+    waitpid(pid, &status, 0);
 }
+
 
 int monitor_child_process(pid_t pid, int timeout, const char *health_url) {
     time_t start_time = time(NULL);
@@ -114,24 +124,35 @@ int monitor_child_process(pid_t pid, int timeout, const char *health_url) {
     while (1) {
         int status;
         pid_t result = waitpid(pid, &status, WNOHANG);
+
         if (result == pid) {
-            // Process exited
-            return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            // Process has exited
+            if (WIFEXITED(status)) {
+                return WEXITSTATUS(status);  // Child exited normally
+            } else if (WIFSIGNALED(status)) {
+                fprintf(stderr, "Child process terminated by signal %d\n", WTERMSIG(status));
+                return -1;  // Termination due to signal
+            }
+        } else if (result == -1) {
+            // Error in waitpid
+            perror("waitpid");
+            return -1;
         }
 
-        // Check timeout
+        // Check if timeout has been exceeded
         if (timeout > 0 && difftime(time(NULL), start_time) > timeout) {
             fprintf(stderr, "Child process exceeded timeout of %d seconds.\n", timeout);
             return -1;  // Indicate timeout
         }
 
-        // Perform health check
+        // Perform health check if enabled
         if (health_url && !health_check(health_url)) {
             fprintf(stderr, "Health check failed for URL: %s\n", health_url);
             return -1;  // Indicate health check failure
         }
 
-        sleep(1);  // Check every second
+        // Sleep for a short period before next iteration
+        sleep(1);
     }
 }
 
