@@ -10,7 +10,6 @@
 - Restart the child process if it get into the "uninterrupible" process state (D).
 - Configurable retry limits to control how many times the process can be restarted.
 - Outputs the child process's `stdout` and `stderr` to the parent process.
-- 
 
 ## Building
 
