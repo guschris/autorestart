@@ -84,6 +84,36 @@ void parse_arguments(int argc, char *argv[], Config *config) {
     }
 }
 
+int is_process_in_uninterruptible_state(pid_t pid) {
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/%d/stat", pid);
+
+    FILE *fp = fopen(path, "r");
+    if (!fp) {
+        if (errno == ENOENT) {
+            // Process no longer exists
+            return -1;
+        }
+        perror("fopen");
+        return 0;  // Assume not in uninterruptible state
+    }
+
+    char buffer[256];
+    if (!fgets(buffer, sizeof(buffer), fp)) {
+        perror("fgets");
+        fclose(fp);
+        return 0;
+    }
+    fclose(fp);
+
+    // The process state is the third field in /proc/<pid>/stat
+    char *state = strchr(buffer, ')');
+    if (state && *(state + 1) != '\0' && *(state + 2) == 'D') {
+        return 1;  // Process is in uninterruptible sleep (D state)
+    }
+    return 0;  // Not in uninterruptible state
+}
+
 int health_check(const char *url) {
     if (!url) return 1;  // Skip health check if no URL is provided
     CURL *curl = curl_easy_init();
@@ -117,7 +147,6 @@ void terminate_process(pid_t pid) {
     waitpid(pid, &status, 0);
 }
 
-
 int monitor_child_process(pid_t pid, int timeout, const char *health_url) {
     time_t start_time = time(NULL);
 
@@ -139,6 +168,17 @@ int monitor_child_process(pid_t pid, int timeout, const char *health_url) {
             return -1;
         }
 
+        // Check for uninterruptible state
+        int uninterruptible = is_process_in_uninterruptible_state(pid);
+        if (uninterruptible == 1) {
+            fprintf(stderr, "Child process is in an uninterruptible sleep state. Terminating...\n");
+            terminate_process(pid);
+            return -1;  // Indicate termination due to uninterruptible state
+        } else if (uninterruptible == -1) {
+            // Process no longer exists
+            return -1;
+        }
+
         // Check if timeout has been exceeded
         if (timeout > 0 && difftime(time(NULL), start_time) > timeout) {
             fprintf(stderr, "Child process exceeded timeout of %d seconds.\n", timeout);
@@ -155,6 +195,7 @@ int monitor_child_process(pid_t pid, int timeout, const char *health_url) {
         sleep(1);
     }
 }
+
 
 int main(int argc, char *argv[]) {
     Config config;
